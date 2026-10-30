@@ -119,13 +119,24 @@ export default Plugin.define({
           }
           if (choice !== "logs") return
         }
-        await context.ui.dialog.alert({ title: `${t.label} · ${labels[t.status]}`, message: [
+        const content = [
+          `任务：${t.id} · 会话：${t.sessionID}`,
           t.command ?? "Agent 手动汇报", t.cwd, t.message, t.error, t.warning,
           `最大运行：${t.timeout ? `${t.timeout}s` : "不限时"} · 空闲超时：${t.idleTimeout ? `${t.idleTimeout}s` : "关闭"}`,
           `进度更新时间：${new Date(t.updated).toLocaleString()} · 执行器：${t.runner}`,
           `退出码：${t.exitCode ?? "—"}${t.signal ? ` · 信号：${t.signal}` : ""}`,
           `日志：${t.logPath}`, result.log,
-        ].filter(Boolean).join("\n") })
+        ].filter(Boolean).join("\n")
+        context.ui.dialog.show(() => {
+          context.ui.dialog.set({ size: "large" })
+          return <box flexDirection="column" paddingLeft={2} paddingRight={2} gap={1}>
+            <text fg={color(t)}>{t.label} · {labels[t.status]}</text>
+            <text fg={theme.text.muted}>鼠标滚轮滚动详情与日志 · Esc 关闭</text>
+            <scrollbox height={Math.max(3, Math.min(24, context.renderer.height - 10))} scrollY={true}>
+              <text fg={theme.text.base} wrapMode="word">{content}</text>
+            </scrollbox>
+          </box>
+        })
       } catch (e) { context.ui.toast.show({ message: clean(String(e)), variant: "error" }) }
     }
     context.keymap.layer(() => ({ mode: "global", commands: [
