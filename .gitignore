@@ -1,0 +1,5 @@
+node_modules/
+artifacts/
+.opencode/
+__pycache__/
+*.pyc
