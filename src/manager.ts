@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
+import type { ToolContext } from "@opencode/plugin/promise/tool"
 import { Session } from "@opencode/schema/session"
 import { Agent } from "@opencode/schema/agent"
 import { spawn, spawnSync } from "node:child_process"
@@ -7,10 +8,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { apply, atomic, clean, newID, processStart, readTask, rootFor, tail, taskDir, tasks, terminal, validateProgress, type Config, type Start, type Task } from "./model"
 
-type Context = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
-type ToolEditor = Parameters<Context["tool"]["transform"]>[0] extends (editor: infer E) => unknown ? E : never
-type Definition = Parameters<ToolEditor["add"]>[0]
-type Call = Parameters<Definition["execute"]>[1]
+type Context = Plugin.Context
+type Call = ToolContext
 const textError = (error: unknown) => clean(error instanceof Error ? error.message : String(error))
 
 export class Manager {
