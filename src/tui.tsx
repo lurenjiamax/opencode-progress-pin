@@ -178,7 +178,11 @@ export default Plugin.define({
             const elapsed = () => (task.ended ?? now()) - task.created
             const eta = () => !terminal(task.status) && percent() !== undefined && percent()! > 0 && percent()! < 100
               ? ` · ETA ${duration(elapsed() * (100 - percent()!) / percent()!)}` : ""
-            return <box flexDirection="column" onMouseDown={() => void details(task)}>
+            return <box flexDirection="column" onMouseUp={event => {
+              event.stopPropagation()
+              // Open after dispatch so this release cannot dismiss the new dialog.
+              queueMicrotask(() => void details(task))
+            }}>
               <box flexDirection="row" justifyContent="space-between">
                 <text fg={color(task)} wrapMode="none" flexShrink={1}>{labels[task.status]} · {task.label}{task.phase ? ` / ${task.phase}` : ""}</text>
                 <text fg={color(task)} flexShrink={0}>{percent() === undefined ? "" : `${bar(percent()!)} ${percent()!.toFixed(0)}% · `}{duration(elapsed())}{eta()}</text>
