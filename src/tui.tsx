@@ -15,6 +15,8 @@ const duration = (ms: number) => {
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m${seconds % 60}s` : `${Math.floor(seconds / 3600)}h${Math.floor(seconds % 3600 / 60)}m`
 }
 const measured = (t: Task) => typeof t.percent === "number" ? t.percent : t.total && t.current !== undefined ? Math.min(100, t.current / t.total * 100) : undefined
+const taskOrder = (a: Task, b: Task) => Number(terminal(a.status)) - Number(terminal(b.status))
+  || (terminal(b.status) ? b.ended ?? b.updated : b.created) - (terminal(a.status) ? a.ended ?? a.updated : a.created)
 const bar = (percent: number) => {
   const count = Math.round(Math.max(0, Math.min(100, percent)) / 10)
   return "━".repeat(count) + "─".repeat(10 - count)
@@ -50,7 +52,7 @@ export default Plugin.define({
     const [all, setAll] = createSignal<Task[]>([])
     const [now, setNow] = createSignal(Date.now())
     const [error, setError] = createSignal("")
-    const [dismissed, setDismissed] = createSignal<string[]>([])
+    const [panel, updatePanel] = context.storage.store<{ dismissed: string[] }>("progress-pin.panel", { initial: { dismissed: [] } })
     let loading = false
     let disposed = false
     let first = true
@@ -143,18 +145,29 @@ export default Plugin.define({
       { id: "progress-pin.tasks", title: "Progress Pin: 查看任务", palette: true, slash: { name: "progress" }, run: async () => {
         await refresh()
         const route = context.ui.router.current()
-        const tasks = route.type === "session" ? visibleTasks(route.sessionID) : all()
+        const tasks = [...(route.type === "session" ? visibleTasks(route.sessionID) : all())].sort(taskOrder)
         if (!tasks.length) { context.ui.toast.show({ message: "当前会话没有进度任务" }); return }
         const selected = await context.ui.dialog.select({ title: "Progress Pin", options: tasks.map(t => ({ title: `${labels[t.status]} · ${t.label}`, value: t.id, description: `${measured(t) === undefined ? "" : `${measured(t)!.toFixed(0)}% · `}${t.command ?? t.phase ?? "Agent"}` })) })
         const task = tasks.find(t => t.id === selected)
         if (task) await details(task)
       } },
-      { id: "progress-pin.dismiss", title: "Progress Pin: 收起已结束任务", palette: true, slash: { name: "progress-clear" }, run: () => { setDismissed(all().filter(t => terminal(t.status)).map(t => t.id)) } },
+      { id: "progress-pin.dismiss", title: "Progress Pin: 收起已结束任务", palette: true, slash: { name: "progress-clear" }, run: async () => {
+        const route = context.ui.router.current()
+        if (route.type !== "session") return
+        const ids = visibleTasks(route.sessionID).filter(t => terminal(t.status)).map(t => t.id)
+        try { await updatePanel(draft => { draft.dismissed = [...new Set([...draft.dismissed, ...ids])] }) }
+        catch (e) { context.ui.toast.show({ message: `保存收起状态失败：${clean(String(e))}`, variant: "error" }) }
+      } },
     ] }))
     const slot = context.ui.slot({ append: "session.composer.top", render: props => {
       const family = createMemo(() => visibleTasks(props.sessionID))
-      const shown = createMemo(() => family().filter(t => !dismissed().includes(t.id) && (!terminal(t.status) || t.status !== "succeeded" || now() - (t.ended ?? 0) < 30000))
-        .sort((a, b) => Number(terminal(a.status)) - Number(terminal(b.status)) || b.created - a.created))
+      const shown = createMemo(() => family().filter(t => !terminal(t.status) || !panel.dismissed.includes(t.id)).sort(taskOrder))
+      const summary = createMemo(() => {
+        const tasks = family()
+        const count = (statuses: Status[]) => tasks.filter(t => statuses.includes(t.status)).length
+        const cancelled = count(["cancelled"])
+        return `${tasks.filter(t => !terminal(t.status)).length} 运行 · ${count(["succeeded"])} 成功 · ${count(["failed", "timed_out", "interrupted"])} 失败${cancelled ? ` · ${cancelled} 取消` : ""}`
+      })
       const max = () => Math.min(5, Math.max(1, Number(context.options.maxVisible ?? 3)), Math.max(1, Math.floor((context.renderer.height - 16) / 3)))
       createEffect(() => {
         now()
@@ -170,7 +183,7 @@ export default Plugin.define({
       return <Show when={shown().length > 0}>
         <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1} marginBottom={1} backgroundColor={theme.background.raised.base}>
           <box flexDirection="row" justifyContent="space-between">
-            <text fg={theme.text.base}>PIN · {shown().filter(t => !terminal(t.status)).length} 个运行任务</text>
+            <text fg={theme.text.base} wrapMode="none" flexShrink={1}>PIN · {summary()}</text>
             <text fg={theme.text.muted}>/progress · /progress-clear</text>
           </box>
           <For each={shown().slice(0, max())}>{task => {
